@@ -1,0 +1,777 @@
+<!DOCTYPE HTML>
+<!-- -*- indent-tabs: nil -*- -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FSK Score Keeper</title>
+
+<script src="modernizr.js"></script>
+
+<!-- <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.5/jquery.min.js"></script> -->
+<script src="jquery.js"></script>
+
+<script type="text/javascript">
+Array.prototype.ormap = function(f) {
+    for (var i = 0; i < this.length; i++) {
+        if (f(this[i])) return true;
+    }
+    return false;
+};
+Array.prototype.andmap = function(f) {
+    for (var i = 0; i < this.length; i++) {
+        var val = f(this[i]);
+        // alert('andmap k:'+i+ ' this[i]:'+this[i] + ' f(this[i]):'+val);
+        if (! val) return false;
+    }
+    return true;
+};
+function identity(x) { return x; }
+
+Array.prototype.keymin = function(f) {
+    if (this.length <= 0) return NaN;
+    if (f == undefined) f = identity;
+    var k = 0;
+    var cand = f(this[0]);
+    for (var i = 1; i < this.length; i++) {
+        var val = f(this[i]);
+        if (val < cand) {
+            cand = val;
+            k = i;
+        }
+    }
+    return k;
+}
+
+Array.prototype.keymax = function(f) {
+    if (this.length <= 0) return NaN;
+    if (f == undefined) f = identity;
+    var k = 0;
+    var cand = f(this[0]);
+    for (var i = 1; i < this.length; i++) {
+        var val = f(this[i]);
+        if (val > cand) {
+            cand = val;
+            k = i;
+        }
+    }
+    return k;
+}
+
+Array.prototype.valmin = function(f) {
+    var k = this.keymin.call(this, f);
+    return this[k];
+}
+
+Array.prototype.valmax = function(f) {
+    var k = this.keymax.call(this, f);
+    return this[k];
+}
+
+Array.prototype.sum = function(f) {
+    var ret = 0;
+    if (f == undefined) f = identity;
+    for (var i = 0; i < this.length; i++) {
+        ret += f(this[i]);
+    }
+    return ret;
+}
+</script>
+
+<script type="text/javascript">
+        function inspect(elm) {
+            var str = "";
+            for (var i in elm) {
+                str += i + ': ' + elm.getAttribute(i) + '\n';
+            }
+            alert(str);
+        }
+</script>
+
+<script type="text/javascript">
+// var numPlayers = 2;
+// var numPlayers = 0;
+function numPlayers() { return players.length; }
+var nextPlayerNum = 1;
+
+// A PlayerObj is a new Player(String, Colorhex)
+
+function Player(name, color) {
+    this._name = name;
+    this._color = color;
+    this._score = 0;
+    this.ui = {};
+
+    var newPlayerDiv = document.createElement('div');
+    newPlayerDiv.id = 'player' +nextPlayerNum;
+    nextPlayerNum += 1;
+    this.div = newPlayerDiv;
+    this._div = newPlayerDiv;
+}
+
+// player.name : -> String
+Player.prototype.name = function () { return this._name; }
+// player.name : -> Colorhex
+Player.prototype.color = function () { return this._color; }
+// player.name : -> Number
+Player.prototype.score = function () { return this._score; }
+// player.name : -> ID
+Player.prototype.id = function () { return '#' + this._div.id; }
+// player.name : -> DOM
+Player.prototype.div = function () { return this._div; }
+
+function varInputChanged(x) {
+    // alert('varInputChanged ' + x);
+    var pObj = idPlayerMap[x];
+    establishVarInput(pObj);
+}
+
+function establishVarInput(pObj) {
+    var x = pObj.div.id;
+    var newVal = $('#' + x + ' .inputdelta').val();
+    establishVarDeltaButtonLabels(pObj, newVal);
+}
+
+function establishVarDeltaButtonLabels(pObj, newVal) {
+    var b;
+    b = pObj.ui.incrVarButton;
+    b.replaceChild(document.createTextNode("+"+newVal), b.firstChild);
+
+    b = pObj.ui.decrVarButton;
+    b.replaceChild(document.createTextNode("-"+newVal), b.firstChild);
+}
+
+// Arrayof PlayerObj
+var players = [];
+// Map from ID to PlayerObj
+var idPlayerMap = {};
+
+// -> Arrayof [Byte Byte Byte]
+function usedColors() {
+    return players.map(function (p) { return p ? p.color() : p; });
+}
+
+// -> Arrayof String
+function usedNames() {
+    return players.map(function (p) { return p ? p.name() : p; });
+}
+
+var nextColor = "#ffff00";
+
+// Colorhex -> Bytetriple
+function colorhexToBytetriple(color) {
+    var num = parseInt((color.replace('#', '')), 16);
+    var r = (num >> 16) % 256;
+    var g = (num >>  8) % 256;
+    var b = (num >>  0) % 256;
+    var ret = [r, g, b];
+    return ret;
+}
+
+// Bytetriple -> Colorhex
+function bytetripleToColorhex(trip) {
+    return '#' + ((trip[0] << 16) + (trip[1] << 8) + trip[0]);
+}
+
+// Bytetriple Bytetriple -> Number
+function bytetripleManhattanDistance(t1, t2) {
+    var deltas = [Math.abs(t1[0] - t2[0]),
+                  Math.abs(t1[1] - t2[1]),
+                  Math.abs(t1[2] - t2[2])];
+    var ret = deltas.sum();
+    return ret;
+}
+
+// Bytetriple Bytetriple -> Number
+function bytetripleEuclideanDistance(t1, t2) {
+    var deltas = [Math.abs(t1[0] - t2[0]),
+                  Math.abs(t1[1] - t2[1]),
+                  Math.abs(t1[2] - t2[2])];
+    var ret = Math.sqrt(deltas.map(function (x) { return x*x; }).sum());
+    return ret;
+}
+var bytetripleDistance = bytetripleEuclideanDistance;
+var bytetriplePreferableMinDistance = 100;
+
+//var playerTrackWidth = 15;
+var playerTrackWidth = 40;
+function trackWidth() { return playerTrackWidth * numPlayers(); }
+
+// Loops or returns Colorhex somewhat different than existing player colors.
+function findRelativelyFreshColor() {
+    var cand;
+    do {
+        cand = '#' + (Math.floor(Math.random() * (256 * 256 * 256))).toString(16);
+        var t1 = colorhexToBytetriple(cand);
+        // alert("cand " + t1.join(","));
+        function finddist(t2) { return bytetripleDistance(t1, t2); }
+        var dists = usedColors().map(finddist);
+        var k = usedColors().keymin(finddist);
+        var v = usedColors()[k];
+        // alert('cand:' + t1.join(',') + ' min dist:' + dists.valmin() + ' key:' + k + ' val:'+v.join(','));
+    } while (dists.ormap(function (d) {
+        return d < bytetriplePreferableMinDistance; }));
+    return cand;
+}
+
+function chooseNextColor() {
+    var cand = findRelativelyFreshColor();
+    nextColor = cand;
+    // alert(nextColor);
+    document.getElementById("addPlayer").style.backgroundColor = nextColor;
+}
+
+function elem(id) { return document.getElementById(id); }
+
+function update_canvas_dimensions() {
+
+    var viewportWidth = window.innerWidth;
+    var viewportHeight = window.innerHeight;
+
+    var trackWidth  = playerTrackWidth * numPlayers();
+
+    var c = elem('canvasbg');
+    var d = elem('outerdiv');
+
+    function addStyle(e, key, val) {
+       e.style.removeProperty(key);
+       var s = e.getAttribute('style');
+       if (!s) { s = ''; }
+       e.setAttribute('style', s + key + ':' + val + ';');
+    }
+
+    addStyle(d, 'width',  viewportWidth + 'px');
+    addStyle(d, 'height', viewportHeight + 'px');
+    addStyle(d, 'min-height', viewportHeight + 'px');
+    var d_style = d.getAttribute('style');
+
+    // (Put this back in after I figure out how to adjust the offset
+    // for the inner div.)
+    c.setAttribute('width', viewportWidth);
+    c.setAttribute('height', viewportHeight);
+
+
+    var id = elem('innercontent');
+
+    // var w = (viewportWidth - 2 * trackWidth) + 'px';
+    var w = (viewportWidth - 2 * trackWidth) + 'px';
+    var h = (viewportHeight - 2 * trackWidth) + 'px';
+
+    // alert("Hello" + JSON.stringify(id["setAttribute"]));
+    // id.removeAttr('style');
+    // id.style.removeProperty('width');
+    id.setAttribute('style', (' position:absolute;'+
+                              ' min-width:'+w + ';' +
+                              ' min-height:'+h + ';' +
+                              ' top:' + trackWidth + 'px' +';' +
+                              ' left:'+ trackWidth + 'px'));
+
+    canvasApp();
+}
+
+$(document).ready(function() {
+
+    window.onload = window.onresize = update_canvas_dimensions;
+
+    document.getElementById("addPlayer").style.backgroundColor = nextColor;
+
+
+    // These are JQuery demos.
+
+    // adds CSS class ".test" to all <a> elements.
+    $("a").addClass("test");
+
+    $("a").click(function(e) {
+        alert("Thanks for visiting!");
+        $("a").removeClass("test");
+    });
+
+    $("p").click(function() {
+        // $(this).hide();
+        $(this).hide("slow");
+    });
+
+    // These are controls for the (brutish non-canvas) player score bars.
+
+    var last = { w1 : "20px", h1 : "10px", w2 : "500px", h2 : "50px" };
+
+    function adjustWidth(playerId, width) {
+        var oldWidth = $(playerId + " .animate").css("width").match(/[0-9]*/);
+        var difference = Math.abs(width - oldWidth);
+        // alert(oldWidth + " " + difference)
+        $(playerId + " .animate").animate({ width: width }, difference);
+    }
+
+    function toggle() {
+        // alert($("#animate1").css("width"));
+        // alert(JSON.stringify(last));
+        var next = last;
+        last = {};
+        last.w1 = $("#player1 .animate").css("width");
+        last.w2 = $("#player2 .animate").css("width");
+
+        adjustWidth("#player1", next.w1);
+        adjustWidth("#player2", next.w2);
+    };
+
+    Player.prototype.deltaScore = function (delta) {
+        function deltaScore(pid, delta) {
+            var score = $(pid + " .score").text();
+            score = Number(score);
+            score = score + delta;
+            $(pid + " .score").text(score);
+            adjustWidth(pid, score);
+        }
+
+        deltaScore(this.id(), delta);
+        this._score += delta;
+        canvasApp();
+    }
+
+    function addone(p) { idPlayerMap[p].deltaScore(1); }
+    function subone(p) { idPlayerMap[p].deltaScore(-1); }
+
+    function getDelta(p) {
+        // alert('getDelta ' + p);
+        var elem = $(p + " .inputdelta");
+        // alert(JSON.stringify(elem));
+        // alert("value" in elem);
+        var delta = elem.val();
+        // alert(p + " " + delta);
+        return delta;
+    }
+
+    function establishClickHandlers(playerNum) {
+        var playerId = "#player" + playerNum;
+        var playerClick = playerId + " .animate";
+        var incroneClick = playerId + " .incrone";
+        var decroneClick = playerId + " .decrone";
+        var incrvarClick = playerId + " .incrvar";
+        var decrvarClick = playerId + " .decrvar";
+        var deleteMeClick = playerId + " .deleteme";
+        $(playerClick).click(function() {
+            // toggle();
+            // addone(playerId);
+            // addone(playerId);
+            // subone(playerId);
+            // idPlayerMap[playerId]._color -= 1;
+        });
+        $(incroneClick).click(function() { addone(playerId); });
+        $(decroneClick).click(function() { subone(playerId); });
+        $(incrvarClick).click(function() {
+            var delta = getDelta(playerId);
+            if (!isNaN(parseInt(delta))) {
+                // deltaScore(playerId, parseInt(delta));
+                idPlayerMap[playerId].deltaScore(parseInt(delta));
+            } else {
+                alert("delta " + delta + " is noninteger.");
+            }
+        });
+        $(decrvarClick).click(function() {
+            var delta = getDelta(playerId);
+            if (!isNaN(parseInt(delta))) {
+                // deltaScore(playerId, - parseInt(delta));
+                idPlayerMap[playerId].deltaScore(- parseInt(delta));
+            } else {
+                alert("delta " + delta + " is noninteger.");
+            }
+        });
+        $(deleteMeClick).click(function() {
+            var player = idPlayerMap[playerId];
+            delete idPlayerMap[playerId];
+            // alert('hi ' + player.id());
+            for (var i = 0; i < players.length; i++) {
+                if (players[i] == player)
+                  players[i] = null;
+            }
+            var elem = document.getElementById('player'+playerNum);
+            elem.parentNode.removeChild(elem);
+            canvasApp();
+        });
+    }
+
+    $('#addPlayer').click(function () {
+       var inputElem = elem('newplayername');
+       var playerName = inputElem.value;
+       addPlayer(playerName, nextColor);
+       chooseNextColor();
+    });
+
+    function addPlayer(name, color) {
+	var noName = (name == "");
+	var oldName = usedNames().ormap(function (n) { return n == name; });
+	if (noName || oldName) {
+	    if (noName) {
+	        var msg = "Please enter player name.";
+	    } else {
+	        var msg = "Please enter an unused player name.";
+	    }
+	    alert(msg);
+	    throw msg;
+	}
+
+	var pObj = new Player(name, color);
+
+	players.push(pObj);
+	idPlayerMap[pObj.id()] = pObj;
+
+	// numPlayers = numPlayers + 1;
+	var playersDiv = elem('players');
+	var newPlayerDiv = pObj.div;
+
+	newPlayerDiv.setAttribute('class', 'player');
+	// newPlayerDiv.class = 'player';
+
+	{
+	    var animateDiv = document.createElement('div');
+            // animateDiv["class"] = 'animate';
+            animateDiv.setAttribute('class', 'animate');
+
+	    //animateDiv.setAttribute('style', "background: " + color + ";");
+            animateDiv.setAttribute('style', "");
+	    animateDiv.style.backgroundColor = color;
+	    animateDiv.style.minWidth = "3px";
+	    animateDiv.style.width = "0px";
+	    newPlayerDiv.appendChild(animateDiv);
+	}
+
+	{
+	    var deltaOneDiv = document.createElement('div');
+	    deltaOneDiv.setAttribute('style', 'float:left');
+	    //deltaOneDiv.style["float"] = 'left';
+	    {
+		var incrOneButton = document.createElement('button');
+		var decrOneButton = document.createElement('button');
+		incrOneButton.setAttribute('class', 'button incrone');
+		incrOneButton.style.backgroundColor = color;
+		decrOneButton.setAttribute('class', 'decrone button');
+		decrOneButton.style.backgroundColor = color;
+		incrOneButton.appendChild(document.createTextNode('+1'));
+		decrOneButton.appendChild(document.createTextNode('-1'));
+		deltaOneDiv.appendChild(incrOneButton);
+		deltaOneDiv.appendChild(document.createElement('br'));
+		deltaOneDiv.appendChild(decrOneButton);
+	    }
+	    newPlayerDiv.appendChild(deltaOneDiv);
+	}
+
+	{
+	    var deltaVarDiv = document.createElement('div');
+	    deltaVarDiv.setAttribute('style', 'float:left');
+	    //deltaVarDiv.style.float = 'left';
+	    {
+		var incrVarButton = document.createElement('button');
+		var decrVarButton = document.createElement('button');
+		var varInput = document.createElement('input');
+		pObj.ui.incrVarButton = incrVarButton;
+		pObj.ui.varInput = varInput;
+		pObj.ui.decrVarButton = decrVarButton;
+
+		incrVarButton.setAttribute('class', 'incrvar button');
+		incrVarButton.style.height = "5%";
+		incrVarButton.style.backgroundColor = color;
+		incrVarButton.appendChild(document.createTextNode("+?"));
+
+		varInput.setAttribute('type', 'number');
+		varInput.setAttribute('class', 'inputdelta');
+		varInput.setAttribute('value', '10');
+		varInput.setAttribute('oninput', 'varInputChanged("' + pObj.id() + '");');
+
+		decrVarButton.setAttribute('class', 'decrvar button');
+		decrVarButton.style.height = "5%";
+		decrVarButton.style.backgroundColor = color;
+		decrVarButton.appendChild(document.createTextNode("-?"));
+
+		deltaVarDiv.appendChild(incrVarButton);
+		deltaVarDiv.appendChild(document.createElement('br'));
+		deltaVarDiv.appendChild(varInput);
+		deltaVarDiv.appendChild(document.createElement('br'));
+		deltaVarDiv.appendChild(decrVarButton);
+	    }
+	    newPlayerDiv.appendChild(deltaVarDiv);
+
+	    {
+	      var playerInfoDiv = document.createElement('div');
+	      playerInfoDiv.setAttribute('style', 'float:left');
+
+	    playerInfoDiv.appendChild(document.createTextNode(name + ':'));
+	    var scoreDiv = document.createElement('div');
+	    scoreDiv.setAttribute('class', 'score');
+	    scoreDiv.appendChild(document.createTextNode('0'));
+	    playerInfoDiv.appendChild(scoreDiv);
+
+	    newPlayerDiv.appendChild(playerInfoDiv);
+            }
+	    var deleteMeButton = document.createElement('button');
+	    deleteMeButton.setAttribute('class', 'deleteme button');
+	    deleteMeButton.style.width = "100px";
+	    deleteMeButton.style.height = "5%";
+	    deleteMeButton.style.backgroundColor = color;
+	    deleteMeButton.appendChild(document.createTextNode('(delete player)'));
+	    newPlayerDiv.appendChild(deleteMeButton);
+	}
+
+	update_canvas_dimensions();
+
+	playersDiv.appendChild(newPlayerDiv);
+
+	establishVarInput(pObj);
+
+	establishClickHandlers(""+numPlayers());
+        //inspect(playersDiv);
+
+	//alert('hi ' + color);
+
+        return pObj;
+    }
+
+    var fil = addPlayer("Felix", "#ff0000");
+    var rob = addPlayer("Rob", "#0080ff");
+
+    fil.deltaScore(20);
+    rob.deltaScore(95);
+
+    canvasApp();
+});
+
+function canvasSupport() {
+    return Modernizr.canvas;
+}
+
+var distinctOffsets = [17, 23, 29, 37, 43, 47, 51];
+
+function canvasApp() {
+    if (!canvasSupport()) {
+        return;
+    } else {
+        var theCanvas = elem("canvasbg");
+        var context = theCanvas.getContext("2d");
+    }
+
+    var d = elem('outerdiv');
+    var viewportWidth = d.width;
+    var viewportHeight = d.height;
+
+    drawScreen();
+
+    function drawScreen() {
+        // make changes here.
+
+        // context.clearRect(0, 0, viewportWidth, viewportHeight);
+        theCanvas.width = theCanvas.width;
+
+        context.fillStyle = '#aaaaaa';
+        // context.fillRect(0, 0, viewportWidth, viewportHeight);
+        context.fillStyle = '#000000';
+        context.font = '80px _sans';
+        context.textBaseline = 'top';
+        context.fillText("Canvas!", 0, 0);
+
+        context.fillStyle = '#00bb0a';
+
+        var points1 = [[0, 0], [20, 0], [40,0], [60,0],
+                      [0,20], [20,20]];
+        var points = [[trackWidth()-5, trackWidth()-5],
+                      [trackWidth()-5, 0],
+                     ];
+        for (var k in points) {
+            var pt = points[k];
+            context.fillRect( pt[0], pt[1], 5, 15);
+        }
+
+        var W = theCanvas.width;
+        var H = theCanvas.height;
+        var D = Math.min(W, H);
+
+        var playerSpacing = 50;
+        var trackSpacing = 10;
+        // var R = D/4 - 35 * numPlayers();
+        var R = D/4;
+        for (var i = 0; i < players.length; i++) {
+            var i1 = i+1;
+            var p = players[i];
+            if (p == null) continue;
+            context.lineWidth = 8;
+            var score = p.score();
+            var x = theCanvas.width / 2;
+            var y = theCanvas.height / 2;
+            context.strokeStyle = p.color();
+            context.beginPath(i1*20, i1*20);
+            var j = 0;
+            context.globalAlpha = 0.3;
+            while (score > 100) {
+                var radians = 2 * Math.PI;
+                context.arc(x, y, R + j * trackSpacing + i1*playerSpacing,
+                            0, 2 * Math.PI, false);
+                context.stroke();
+                context.beginPath(i1*20, i1*20);
+                // context.globalAlpha = 1.0;
+                j++;
+                score -= 100;
+            }
+            var radians = score / 100 * 2 * Math.PI;
+            radians = Math.max(radians, 0.04/Math.sqrt(i1));
+            // alert(p.name() + ' ' + p.score());
+            // alert(radians);
+            context.arc(x, y, R + j * trackSpacing + i1*playerSpacing,
+                        0, radians, false);
+            context.stroke();
+            // context.endPath();
+        }
+    }
+}
+</script>
+
+<style>
+
+    a.test { font-weight: bold; }
+
+    .animate { border: 1px solid white; height: 50px; width: 200px; float: right;}
+    div.button { border: 1px solid white; height: 50px; width: 50px; }
+
+    button.button { border: 1px solid; height: 30px; width: 50px; }
+    button.deleteme { float:right; // color: white; }
+
+    // (Now setting below attributes locally to match dynamic construction
+    //  of new players.)
+
+    // #player1 .button { background-color: red }
+    // #player2 .button { background-color: blue }
+
+    div.player { overflow-y: hidden; overflow-x: auto; }
+
+    input.inputdelta { width:40px; }
+
+    canvas { border: dotted }
+
+    #outerdiv { z-index: -3; position: absolute; top: 0px; left: 0px; background-color: #00ffee; border: 0px dotted; margin: 0px; }
+    #canvasbg { z-index: -2; position: fixed; top: 0px; left: 0px; background-color: #ffffee; }
+     #innercontent {
+         position:absolute;
+         opacity:0.85;
+         background-color: #eeeeee;
+         margin: 0px; border: 0px dotted;
+         overflow: auto;
+     }
+</style>
+
+<style type="text/css">
+        body
+        {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header
+        {
+            height: 100px;
+            background-color: red;
+        }
+
+        .content
+        {
+            height: 100%;
+            background-color: green;
+        }
+</style>
+
+<script type="text/javascript">
+function resize()
+{
+    var contentDiv = elem("contentId");
+    var headerDiv = elem("headerId");
+    var headerHeight = headerDiv.offsetHeight;
+
+    var viewportHeight = document.getElementsByTagName('body')[0].clientHeight;
+
+    contentDiv.style.height = viewportHeight - headerHeight;
+}
+
+window.onload = resize;
+window.onresize = resize;
+</script>
+</head>
+
+<!-- fill iOS screen with canvas -->
+<meta name="viewport" content="width=100%" />
+
+<body>
+
+<div id="outerdiv">
+    <canvas id="canvasbg">
+      Your browser does not support HTML5 Canvas.
+    </canvas>
+    I wonder how I make this occupy the whole width of the screen
+
+<div id="innercontent">
+Hello World
+
+<!--
+<p>If you click on me, I will disappear.</p>
+
+<a>hi there 1</a>
+<p><a>hi there 2</a></p>
+
+<p>Me as well.</p>
+-->
+
+<div id="players">
+
+<!-- The HTML below is the original way I drafted the player rendering.
+     Now, for overall consistency, all players are created via the Javascript
+     routine addPlayer(name, color).
+-->
+
+<!--
+    <div class="player" id="player1">
+
+    <div style="float:left" style="width:30px">
+    <button style="height:5%; background-color:red" class="incrvar button">+?</button><br/>
+    <input type="number" class="inputdelta" value="10"></input><br/>
+    <button style="height:5%; background-color:red" class="decrvar button">-?</button>
+    </div>
+
+    <div style="float:left">
+    <button style="background-color:red" class="incrone button">+1</button><br/>
+    <button style="background-color:red" class="decrone button">-1</button>
+    </div>
+
+    Felix: <span class="score">20</span>
+    <button class="animate" style="background-color: red;"></button>
+    </div>
+
+    <div class="player" id="player2">
+    <div class="animate" style="background-color: blue;"></div>
+    <div style="float:left">
+    <button style="background-color: blue;" class="incrone button">+1</button><br/>
+    <button style="background-color: blue;" class="decrone button">-1</button>
+    </div>
+
+    <div style="float:left">
+    <button style="height:5%; background-color: blue;" class="incrvar button">+?</button><br/>
+    <input type="number" class="inputdelta" value="10"></input><br/>
+    <button style="height:5%; background-color: blue;" class="decrvar button">-?</button>
+    </div>
+
+
+    Rob: <div class="score">50</div>
+    </div>
+-->
+
+</div>
+
+<div id="newPlayer">
+    <input id="newplayername"></input>
+    <button id="addPlayer">Add Player</button>
+    <!-- Below not implemented yet; color-picker input is insufficiently
+         supported across browsers.  There are examples online on how to
+         implement a fallback.  For now, a randomly selected color will
+         (probably) suffice. -->
+    <!-- <button id="chooseNextPlayerColor">(Change Next Color)</button> -->
+</div>
+
+</div>
+</div>
+
+</body>
+</html>
