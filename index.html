@@ -3,6 +3,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent" /> <!-- "default", "black", "black-translucent" -->
+
+<!-- fill iOS screen with canvas;
+     disallow pinch-to-zoom and double-tap-to-zoom -->
+<meta name="viewport"
+      content="width=device-width, user-scalable=no" />
 <title>FSK Score Keeper</title>
 
 <script src="modernizr.js"></script>
@@ -691,10 +699,6 @@ window.onload = resize;
 window.onresize = resize;
 </script>
 </head>
-
-<!-- fill iOS screen with canvas -->
-<!-- <meta name="viewport" content="width=100%" /> -->
-<meta name="viewport" content="width=device-width" />
 
 <body>
 
